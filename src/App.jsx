@@ -1,0 +1,183 @@
+import React, { useEffect, useState } from 'react';
+import { ethers } from 'ethers';
+import { Upload, CheckCircle, XCircle, Wallet } from 'lucide-react';
+
+const CONTRACT_ABI = [
+  "function mintDiploma(address student, string memory metadataURI, string memory pdfHash) external",
+  "function ownerOf(uint256 tokenId) public view returns (address)",
+  "function getPdfHash(uint256 tokenId) public view returns (string)",
+  "function nextId() external view returns (uint256)"
+];
+
+const CONTRACT_ADDRESS = "0x81083cfad5c2f24f27dfa39265340f433da0ea91";
+const DEFAULT_METADATA = "https://violet-patient-tiger-874.mypinata.cloud/ipfs/bafkreieetfhppak5kdnuljt45hy462yvoghlawzovobtm32m7ifhiqcmtq";
+
+export default function SepoliaDiplomaDapp() {
+  const [provider, setProvider] = useState(null);
+  const [signer, setSigner] = useState(null);
+  const [account, setAccount] = useState(null);
+  const [contract, setContract] = useState(null);
+  const [status, setStatus] = useState('idle');
+
+  const [recipient, setRecipient] = useState('');
+  const [metadataURI, setMetadataURI] = useState(DEFAULT_METADATA);
+  const [mintPdfHash, setMintPdfHash] = useState('');
+
+  const [uploadedPdfHash, setUploadedPdfHash] = useState('');
+  const [verifyUploadedMatch, setVerifyUploadedMatch] = useState(null);
+
+  useEffect(() => {
+    document.body.style.fontFamily = '"Helvetica Neue", Helvetica, Arial, sans-serif';
+    if (!window.ethereum) return;
+    let p = ethers?.providers?.Web3Provider
+      ? new ethers.providers.Web3Provider(window.ethereum, 'any')
+      : new ethers.BrowserProvider(window.ethereum);
+    setProvider(p);
+  }, []);
+
+  async function connectWallet() {
+    if (!window.ethereum) return alert('Please install MetaMask or another web3 wallet');
+    try {
+      await window.ethereum.request({ method: 'eth_requestAccounts' });
+      const s = await provider.getSigner();
+      const addr = await s.getAddress();
+      setSigner(s);
+      setAccount(addr);
+      const c = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, s);
+      setContract(c);
+      setStatus('connected');
+      if (uploadedPdfHash) retriggerVerification();
+    } catch (err) {
+      console.error(err);
+      setStatus('error');
+    }
+  }
+
+  async function scanDiplomasAndCompare(hash) {
+    if (!contract || !account) return null;
+    try {
+      const last = await contract.nextId();
+      const lastNum = Number(last);
+      for (let tokenId = 1; tokenId <= lastNum; tokenId++) {
+        try {
+          const owner = await contract.ownerOf(tokenId);
+          if (owner && owner.toLowerCase() === account.toLowerCase()) {
+            const chainHash = await contract.getPdfHash(tokenId);
+            if (chainHash.toLowerCase() === hash.toLowerCase()) return tokenId;
+          }
+        } catch {}
+      }
+    } catch (err) {
+      console.error('Error scanning diplomas:', err);
+    }
+    return false;
+  }
+
+  async function handlePdfUpload(e, type = 'verify') {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const arrayBuffer = await file.arrayBuffer();
+    const hashBuffer = await crypto.subtle.digest('SHA-256', arrayBuffer);
+    const hex = Array.from(new Uint8Array(hashBuffer)).map(b => b.toString(16).padStart(2, '0')).join('');
+    const localHash = '0x' + hex;
+
+    if (type === 'mint') setMintPdfHash(localHash);
+    else {
+      setUploadedPdfHash(localHash);
+      if (contract && account) await retriggerVerification(localHash);
+    }
+  }
+
+  async function retriggerVerification(forcedHash = null) {
+    const hash = forcedHash || uploadedPdfHash;
+    if (!hash) return;
+    setStatus('Rescanning NFTs...');
+    const match = await scanDiplomasAndCompare(hash);
+    setVerifyUploadedMatch(match);
+    setStatus('Scan complete');
+  }
+
+  async function mintDiploma(e) {
+    e.preventDefault();
+    if (!contract) return alert('Connect your wallet first');
+    if (!recipient || !metadataURI || !mintPdfHash) return alert('Please select a PDF, recipient and metadata URI');
+    try {
+      setStatus('sending');
+      const tx = await contract.mintDiploma(recipient, metadataURI, mintPdfHash);
+      setStatus('pending tx ' + (tx.hash || tx.transactionHash || ''));
+      await tx.wait();
+      setStatus('minted ✅ tx ' + (tx.hash || tx.transactionHash || ''));
+    } catch (err) {
+      console.error(err);
+      setStatus('tx failed: ' + (err.message || String(err)));
+    }
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-b from-[#f7f8fa] to-[#e9ecf2] flex flex-col items-center font-sans">
+      <header className="w-full bg-white shadow-md flex items-center justify-between px-8 py-4">
+        <div className="flex items-center space-x-3">
+          <img src="/NovaPrincipalV2.png" alt="NOVA SBE Logo" className="h-8" />
+          <h1 className="text-xl font-semibold text-black">NOVA SBE Diploma Verification</h1>
+        </div>
+        <button
+          onClick={connectWallet}
+          className="flex items-center space-x-2 px-4 py-2 rounded-none border-2 border-black text-black bg-transparent uppercase font-semibold tracking-wide hover:bg-black hover:text-white transition"
+        >
+          <Wallet size={18} />
+          <span>{account ? `${account.slice(0, 6)}...${account.slice(-4)}` : 'Connect Wallet'}</span>
+        </button>
+      </header>
+
+      <main className="w-full max-w-4xl bg-white shadow-lg rounded-2xl p-10 mt-10 mb-10">
+        <h2 className="text-3xl font-semibold text-center text-black mb-8">Diploma Minting & Verification Portal</h2>
+
+        <section className="mb-10">
+          <h3 className="text-xl font-medium mb-4 text-black">Mint Diploma</h3>
+          <form onSubmit={mintDiploma} className="space-y-4">
+            <div>
+              <label className="text-sm font-medium text-black">Recipient Address</label>
+              <input type="text" className="w-full border rounded-lg p-2 mt-1 focus:ring-[#004b87] focus:border-[#004b87]" value={recipient} onChange={e => setRecipient(e.target.value)} placeholder="0x..." />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-black">Metadata URI (IPFS JSON)</label>
+              <input type="text" className="w-full border rounded-lg p-2 mt-1 focus:ring-[#004b87] focus:border-[#004b87]" value={metadataURI} onChange={e => setMetadataURI(e.target.value)} />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-black flex items-center space-x-2"><Upload size={16} /> <span>Upload Diploma PDF</span></label>
+              <input type="file" accept="application/pdf" className="w-full border rounded-lg p-2 mt-2" onChange={e => handlePdfUpload(e, 'mint')} />
+              {mintPdfHash && <div className="p-2 bg-gray-100 rounded-lg text-xs mt-2 break-all">Generated Hash: {mintPdfHash}</div>}
+            </div>
+            <button type="submit" className="mt-2 px-5 py-2 border-2 border-black text-black bg-transparent rounded-none uppercase font-semibold tracking-wide hover:bg-black hover:text-white transition">Mint Diploma</button>
+          </form>
+        </section>
+
+        <section>
+          <h3 className="text-xl font-medium mb-4 text-black">Verify Diploma by PDF Upload</h3>
+          <div className="space-y-4">
+            <label className="text-sm font-medium text-black flex items-center space-x-2"><Upload size={16} /> <span>Upload PDF for Verification</span></label>
+            <input type="file" accept="application/pdf" className="w-full border rounded-lg p-2" onChange={handlePdfUpload} />
+
+            {uploadedPdfHash && <div className="p-2 bg-gray-100 rounded-lg text-xs break-all">Local PDF Hash: {uploadedPdfHash}</div>}
+
+            {uploadedPdfHash && (
+              <button onClick={() => retriggerVerification()} className="px-4 py-2 border-2 border-black text-black bg-transparent rounded-none text-sm uppercase font-semibold tracking-wide hover:bg-black hover:text-white transition">Re-run Verification</button>
+            )}
+
+            {verifyUploadedMatch !== null && uploadedPdfHash && (
+              <div className={`p-4 rounded-lg text-sm border flex items-center space-x-2 ${verifyUploadedMatch === false ? 'bg-red-50 border-red-300 text-red-700' : 'bg-green-50 border-green-300 text-green-700'}`}>
+                {verifyUploadedMatch === false ? <XCircle size={18} /> : <CheckCircle size={18} />}
+                <span>{verifyUploadedMatch === false ? 'No diploma NFT in your connected wallet matches this PDF' : `PDF matches your Diploma NFT — Token ID #${verifyUploadedMatch}`}</span>
+              </div>
+            )}
+          </div>
+        </section>
+      </main>
+
+      <footer className="text-center text-sm text-black mb-6">
+        © 2025 NOVA School of Business and Economics — Diploma Verification Demo on Sepolia
+      </footer>
+    </div>
+  );
+}

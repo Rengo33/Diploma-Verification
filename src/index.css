@@ -1,0 +1,21 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Global theme */
+body {
+  font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif;
+  background: linear-gradient(to bottom, #f7f8fa, #e9ecf2);
+  color: #000;
+  margin: 0;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Optional helpers using @apply (now supported) */
+.container { @apply mx-auto px-4; }
+.card { @apply bg-white rounded-2xl shadow-lg; }
+.btn-outline { @apply border-2 border-black text-black bg-transparent uppercase font-semibold tracking-wide hover:bg-black hover:text-white transition; }
+.input { @apply w-full border rounded-lg p-2; }
+.label { @apply text-sm font-medium text-black; }
