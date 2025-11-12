@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { ethers } from 'ethers';
-import { Upload, CheckCircle, XCircle, Wallet } from 'lucide-react';
+import { Upload, CheckCircle, XCircle, Wallet, Loader2 } from 'lucide-react';
 
 const CONTRACT_ABI = [
   "function mintDiploma(address student, string memory metadataURI, string memory pdfHash) external",
@@ -9,7 +9,7 @@ const CONTRACT_ABI = [
   "function nextId() external view returns (uint256)"
 ];
 
-const CONTRACT_ADDRESS = "0x81083cfad5c2f24f27dfa39265340f433da0ea91";
+const CONTRACT_ADDRESS = "0x925d08F236B7b51cE160d711876b049667AD43E2";
 const DEFAULT_METADATA = "https://violet-patient-tiger-874.mypinata.cloud/ipfs/bafkreieetfhppak5kdnuljt45hy462yvoghlawzovobtm32m7ifhiqcmtq";
 
 export default function SepoliaDiplomaDapp() {
@@ -18,6 +18,9 @@ export default function SepoliaDiplomaDapp() {
   const [account, setAccount] = useState(null);
   const [contract, setContract] = useState(null);
   const [status, setStatus] = useState('idle');
+  const [txHash, setTxHash] = useState(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef(null);
 
   const [recipient, setRecipient] = useState('');
   const [metadataURI, setMetadataURI] = useState(DEFAULT_METADATA);
@@ -33,6 +36,12 @@ export default function SepoliaDiplomaDapp() {
       ? new ethers.providers.Web3Provider(window.ethereum, 'any')
       : new ethers.BrowserProvider(window.ethereum);
     setProvider(p);
+
+    function handleClickOutside(e){
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    }
+    document.addEventListener('click', handleClickOutside);
+    return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
   async function connectWallet() {
@@ -51,6 +60,33 @@ export default function SepoliaDiplomaDapp() {
       console.error(err);
       setStatus('error');
     }
+  }
+
+  function disconnectWallet() {
+    setSigner(null);
+    setAccount(null);
+    setContract(null);
+    setStatus('disconnected');
+    setVerifyUploadedMatch(null);
+    setMenuOpen(false);
+  }
+
+  async function copyAddress() {
+    if (!account) return;
+    try {
+      await navigator.clipboard.writeText(account);
+      setStatus('Address copied');
+    } catch {
+      setStatus('Copy failed');
+    }
+    setMenuOpen(false);
+  }
+
+  function viewOnEtherscan() {
+    if (!account) return;
+    const url = `https://sepolia.etherscan.io/address/${account}`;
+    window.open(url, '_blank');
+    setMenuOpen(false);
   }
 
   async function scanDiplomasAndCompare(hash) {
@@ -104,13 +140,15 @@ export default function SepoliaDiplomaDapp() {
     if (!recipient || !metadataURI || !mintPdfHash) return alert('Please select a PDF, recipient and metadata URI');
     try {
       setStatus('sending');
+      setTxHash(null);
       const tx = await contract.mintDiploma(recipient, metadataURI, mintPdfHash);
-      setStatus('pending tx ' + (tx.hash || tx.transactionHash || ''));
+      setTxHash(tx.hash);
+      setStatus('Transaction pending...');
       await tx.wait();
-      setStatus('minted ✅ tx ' + (tx.hash || tx.transactionHash || ''));
+      setStatus('Transaction confirmed ✅');
     } catch (err) {
       console.error(err);
-      setStatus('tx failed: ' + (err.message || String(err)));
+      setStatus('Transaction failed: ' + (err.message || String(err)));
     }
   }
 
@@ -121,13 +159,25 @@ export default function SepoliaDiplomaDapp() {
           <img src="/NovaPrincipalV2.png" alt="NOVA SBE Logo" className="h-8" />
           <h1 className="text-xl font-semibold text-black">NOVA SBE Diploma Verification</h1>
         </div>
-        <button
-          onClick={connectWallet}
-          className="flex items-center space-x-2 px-4 py-2 rounded-none border-2 border-black text-black bg-transparent uppercase font-semibold tracking-wide hover:bg-black hover:text-white transition"
-        >
-          <Wallet size={18} />
-          <span>{account ? `${account.slice(0, 6)}...${account.slice(-4)}` : 'Connect Wallet'}</span>
-        </button>
+
+        <div className="relative" ref={menuRef}>
+          <button
+            onClick={() => (account ? setMenuOpen(!menuOpen) : connectWallet())}
+            className="flex items-center space-x-2 px-4 py-2 rounded-none border-2 border-black text-black bg-transparent uppercase font-semibold tracking-wide hover:bg-black hover:text-white transition"
+          >
+            <Wallet size={18} />
+            <span>{account ? `${account.slice(0, 6)}...${account.slice(-4)}` : 'Connect Wallet'}</span>
+          </button>
+
+          {account && menuOpen && (
+            <div className="absolute right-0 mt-2 w-56 bg-white border border-black rounded-md shadow-lg z-50">
+              <div className="px-3 py-2 text-xs text-gray-600 border-b break-all">{account}</div>
+              <button onClick={copyAddress} className="w-full text-left px-4 py-2 hover:bg-gray-100">Copy address</button>
+              <button onClick={viewOnEtherscan} className="w-full text-left px-4 py-2 hover:bg-gray-100">View on Etherscan (Sepolia)</button>
+              <button onClick={disconnectWallet} className="w-full text-left px-4 py-2 hover:bg-gray-100 text-red-600">Disconnect</button>
+            </div>
+          )}
+        </div>
       </header>
 
       <main className="w-full max-w-4xl bg-white shadow-lg rounded-2xl p-10 mt-10 mb-10">
@@ -151,6 +201,19 @@ export default function SepoliaDiplomaDapp() {
             </div>
             <button type="submit" className="mt-2 px-5 py-2 border-2 border-black text-black bg-transparent rounded-none uppercase font-semibold tracking-wide hover:bg-black hover:text-white transition">Mint Diploma</button>
           </form>
+
+          {/* Transaction Status Display */}
+          {status.startsWith('Transaction') || status.startsWith('sending') ? (
+            <div className="mt-4 p-3 border rounded bg-gray-50 flex items-center space-x-2 text-sm">
+              <Loader2 className="animate-spin" size={16} />
+              <span>{status}</span>
+              {txHash && <a href={`https://sepolia.etherscan.io/tx/${txHash}`} target="_blank" rel="noreferrer" className="text-blue-600 underline ml-2">View on Etherscan</a>}
+            </div>
+          ) : status.includes('confirmed') ? (
+            <div className="mt-4 p-3 border rounded bg-green-50 text-green-700 text-sm">✅ {status} {txHash && <a href={`https://sepolia.etherscan.io/tx/${txHash}`} target="_blank" rel="noreferrer" className="text-green-800 underline ml-1">View Tx</a>}</div>
+          ) : status.includes('failed') ? (
+            <div className="mt-4 p-3 border rounded bg-red-50 text-red-700 text-sm">❌ {status}</div>
+          ) : null}
         </section>
 
         <section>
