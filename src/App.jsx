@@ -10,7 +10,7 @@ const CONTRACT_ABI = [
   "function hasRole(bytes32 role, address account) external view returns (bool)"
 ];
 
-const CONTRACT_ADDRESS = "0x81083cfad5c2f24f27dfa39265340f433da0ea91";
+const CONTRACT_ADDRESS = "0x1E0AA66Ad5B46e2af5a5587BEcf7Fb15b6E043fc";
 const DEFAULT_METADATA = "https://violet-patient-tiger-874.mypinata.cloud/ipfs/bafkreieetfhppak5kdnuljt45hy462yvoghlawzovobtm32m7ifhiqcmtq";
 
 export default function SepoliaDiplomaDapp() {
