@@ -10,7 +10,7 @@ const CONTRACT_ADDRESS = '0x1E0AA66Ad5B46e2af5a5587BEcf7Fb15b6E043fc';
 const CONTRACT_ABI = [
   'function hasMinterRole(address account) external view returns (bool)',
   'function hasRevokerRole(address account) external view returns (bool)',
-  'function hasRole(bytes32 role, address account) external view returns (bool)',
+  'function hasAdminRole(address account) external view returns (bool)',
 ];
 
 export default function AdminProtected() {
