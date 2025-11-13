@@ -3,15 +3,14 @@ import { ethers } from 'ethers';
 import { Wallet, XCircle, Loader2 } from 'lucide-react';
 import SepoliaDiplomaDapp from './SepoliaDiplomaDapp';
 
+// ✅ Import the full ABI
+import DiplomaNFT from '../abi/DiplomaNFT.json';
+
 // Contract address on Sepolia
 const CONTRACT_ADDRESS = '0x1E0AA66Ad5B46e2af5a5587BEcf7Fb15b6E043fc';
 
 // Minimal ABI with exactly what the contract exposes
-const CONTRACT_ABI = [
-  'function hasMinterRole(address account) external view returns (bool)',
-  'function hasRevokerRole(address account) external view returns (bool)',
-  'function hasAdminRole(address account) external view returns (bool)',
-];
+const CONTRACT_ABI = DiplomaNFT;
 
 export default function AdminProtected() {
   const [provider, setProvider] = useState(null);
