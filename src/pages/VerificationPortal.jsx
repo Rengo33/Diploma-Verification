@@ -290,23 +290,18 @@ export default function VerificationPortal() {
         {/* VERIFICATION RESULT */}
         {verifyUploadedMatch !== null && uploadedPdfHash && (
           <div
-            className={`mt-6 p-4 rounded-lg text-sm border flex items-center justify-center space-x-2 ${
+            className={`mt-4 p-4 rounded-lg text-sm flex gap-2 border ${
               verifyUploadedMatch === false
-                ? 'bg-red-50 border-red-300 text-red-700'
-                : 'bg-green-50 border-green-300 text-green-700'
+                ? "bg-red-50 border-red-300 text-red-700"
+                : "bg-green-50 border-green-300 text-green-700"
             }`}
           >
-            {verifyUploadedMatch === false ? (
-              <>
-                <XCircle size={18} />
-                <span>No diploma in your wallet matches this PDF</span>
-              </>
-            ) : (
-              <>
-                <CheckCircle size={18} />
-                <span>PDF verified — Token ID #{verifyUploadedMatch}</span>
-              </>
-            )}
+            {verifyUploadedMatch === false ? <XCircle size={18} /> : <CheckCircle size={18} />}
+            <span>
+              {verifyUploadedMatch === false
+                ? "No diploma NFT in your wallet matches this PDF."
+                : `Diploma verified – match found (Token ID #${verifyUploadedMatch})`}
+            </span>
           </div>
         )}
 
