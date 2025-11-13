@@ -6,10 +6,11 @@ const CONTRACT_ABI = [
   "function mintDiploma(address student, string memory metadataURI, string memory pdfHash) external",
   "function ownerOf(uint256 tokenId) public view returns (address)",
   "function getPdfHash(uint256 tokenId) public view returns (string)",
-  "function nextId() external view returns (uint256)"
+  "function nextId() external view returns (uint256)",
+  "function hasRole(bytes32 role, address account) external view returns (bool)"
 ];
 
-const CONTRACT_ADDRESS = "0x1E0AA66Ad5B46e2af5a5587BEcf7Fb15b6E043fc";
+const CONTRACT_ADDRESS = "0x81083cfad5c2f24f27dfa39265340f433da0ea91";
 const DEFAULT_METADATA = "https://violet-patient-tiger-874.mypinata.cloud/ipfs/bafkreieetfhppak5kdnuljt45hy462yvoghlawzovobtm32m7ifhiqcmtq";
 
 export default function SepoliaDiplomaDapp() {
@@ -21,11 +22,10 @@ export default function SepoliaDiplomaDapp() {
   const [txHash, setTxHash] = useState(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef(null);
-
+  const [roles, setRoles] = useState({ isAdmin: false, isMinter: false, isRevoker: false });
   const [recipient, setRecipient] = useState('');
   const [metadataURI, setMetadataURI] = useState(DEFAULT_METADATA);
   const [mintPdfHash, setMintPdfHash] = useState('');
-
   const [uploadedPdfHash, setUploadedPdfHash] = useState('');
   const [verifyUploadedMatch, setVerifyUploadedMatch] = useState(null);
 
@@ -44,6 +44,10 @@ export default function SepoliaDiplomaDapp() {
     return () => document.removeEventListener('click', handleClickOutside);
   }, []);
 
+  const MINTER_ROLE = ethers.id("MINTER_ROLE");
+  const REVOKER_ROLE = ethers.id("REVOKER_ROLE");
+  const ADMIN_ROLE = ethers.ZeroHash;
+
   async function connectWallet() {
     if (!window.ethereum) return alert('Please install MetaMask or another web3 wallet');
     try {
@@ -54,6 +58,7 @@ export default function SepoliaDiplomaDapp() {
       setAccount(addr);
       const c = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, s);
       setContract(c);
+      await fetchRoles(c, addr);
       setStatus('connected');
       if (uploadedPdfHash) retriggerVerification();
     } catch (err) {
@@ -87,6 +92,20 @@ export default function SepoliaDiplomaDapp() {
     const url = `https://sepolia.etherscan.io/address/${account}`;
     window.open(url, '_blank');
     setMenuOpen(false);
+  }
+
+  async function fetchRoles(c, addr) {
+    if (!c || !addr) return;
+    try {
+      const [isMinter, isRevoker, isAdmin] = await Promise.all([
+        c.hasRole(MINTER_ROLE, addr),
+        c.hasRole(REVOKER_ROLE, addr),
+        c.hasRole(ADMIN_ROLE, addr),
+      ]);
+      setRoles({ isAdmin, isMinter, isRevoker });
+    } catch (e) {
+      console.error('fetchRoles error', e);
+    }
   }
 
   async function scanDiplomasAndCompare(hash) {
@@ -146,9 +165,15 @@ export default function SepoliaDiplomaDapp() {
       setStatus('Transaction pending...');
       await tx.wait();
       setStatus('Transaction confirmed ✅');
+      // Auto-hide confirmation after 10 seconds
+      setTimeout(() => {
+        setStatus('idle');
+        setTxHash(null);
+      }, 10000);
     } catch (err) {
       console.error(err);
       setStatus('Transaction failed: ' + (err.message || String(err)));
+      setTimeout(() => setStatus('idle'), 10000);
     }
   }
 
@@ -160,7 +185,14 @@ export default function SepoliaDiplomaDapp() {
           <h1 className="text-xl font-semibold text-black">NOVA SBE Diploma Verification</h1>
         </div>
 
-        <div className="relative" ref={menuRef}>
+        <div className="relative flex items-center gap-3" ref={menuRef}>
+          {account && (
+            <div className="hidden md:flex gap-2 text-xs">
+              {roles.isAdmin && <span className="border border-black px-2 py-1 rounded">ADMIN</span>}
+              {roles.isMinter && <span className="border border-green-600 text-green-600 px-2 py-1 rounded">MINTER</span>}
+              {roles.isRevoker && <span className="border border-red-600 text-red-600 px-2 py-1 rounded">REVOKER</span>}
+            </div>
+          )}
           <button
             onClick={() => (account ? setMenuOpen(!menuOpen) : connectWallet())}
             className="flex items-center space-x-2 px-4 py-2 rounded-none border-2 border-black text-black bg-transparent uppercase font-semibold tracking-wide hover:bg-black hover:text-white transition"
@@ -170,8 +202,14 @@ export default function SepoliaDiplomaDapp() {
           </button>
 
           {account && menuOpen && (
-            <div className="absolute right-0 mt-2 w-56 bg-white border border-black rounded-md shadow-lg z-50">
+            <div className="absolute right-0 mt-2 w-64 bg-white border border-black rounded-md shadow-lg z-50">
               <div className="px-3 py-2 text-xs text-gray-600 border-b break-all">{account}</div>
+              <div className="px-3 py-2 flex flex-wrap gap-2 border-b text-xs">
+                {roles.isAdmin && <span className="border border-black px-2 py-0.5 rounded">ADMIN</span>}
+                {roles.isMinter && <span className="border border-green-600 text-green-600 px-2 py-0.5 rounded">MINTER</span>}
+                {roles.isRevoker && <span className="border border-red-600 text-red-600 px-2 py-0.5 rounded">REVOKER</span>}
+                {!roles.isAdmin && !roles.isMinter && !roles.isRevoker && <span className="text-gray-500">No special roles</span>}
+              </div>
               <button onClick={copyAddress} className="w-full text-left px-4 py-2 hover:bg-gray-100">Copy address</button>
               <button onClick={viewOnEtherscan} className="w-full text-left px-4 py-2 hover:bg-gray-100">View on Etherscan (Sepolia)</button>
               <button onClick={disconnectWallet} className="w-full text-left px-4 py-2 hover:bg-gray-100 text-red-600">Disconnect</button>
@@ -202,7 +240,6 @@ export default function SepoliaDiplomaDapp() {
             <button type="submit" className="mt-2 px-5 py-2 border-2 border-black text-black bg-transparent rounded-none uppercase font-semibold tracking-wide hover:bg-black hover:text-white transition">Mint Diploma</button>
           </form>
 
-          {/* Transaction Status Display */}
           {status.startsWith('Transaction') || status.startsWith('sending') ? (
             <div className="mt-4 p-3 border rounded bg-gray-50 flex items-center space-x-2 text-sm">
               <Loader2 className="animate-spin" size={16} />
