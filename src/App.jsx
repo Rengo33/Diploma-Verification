@@ -47,7 +47,7 @@ export default function SepoliaDiplomaDapp() {
   const MINTER_ROLE = ethers.id("MINTER_ROLE");
   const REVOKER_ROLE = ethers.id("REVOKER_ROLE");
   // Default admin role in OpenZeppelin is bytes32(0)
-  const ADMIN_ROLE = '0x0000000000000000000000000000000000000000000000000000000000000000';
+  const ADMIN_ROLE = ethers.ZeroHash;
 
   async function connectWallet() {
     if (!window.ethereum) return alert('Please install MetaMask or another web3 wallet');
@@ -101,7 +101,7 @@ export default function SepoliaDiplomaDapp() {
       const [isMinter, isRevoker, isAdmin] = await Promise.all([
         c.hasRole(MINTER_ROLE, addr),
         c.hasRole(REVOKER_ROLE, addr),
-        c.hasRole(ADMIN_ROLE, addr),
+        c.hasRole(ethers.ZeroHash, addr)
       ]);
       setRoles({ isAdmin, isMinter, isRevoker });
     } catch (e) {
