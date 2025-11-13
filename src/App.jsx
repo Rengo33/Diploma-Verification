@@ -101,7 +101,7 @@ export default function SepoliaDiplomaDapp() {
       const [isMinter, isRevoker, isAdmin] = await Promise.all([
         c.hasRole(MINTER_ROLE, addr),
         c.hasRole(REVOKER_ROLE, addr),
-        c.hasRole(ethers.ZeroHash, addr)
+        c.hasRole(ADMIN_ROLE, addr),
       ]);
       setRoles({ isAdmin, isMinter, isRevoker });
     } catch (e) {
