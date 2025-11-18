@@ -9,7 +9,7 @@ import DiplomaNFT from '../abi/DiplomaNFT.json';
 // Contract address on Sepolia
 const CONTRACT_ADDRESS = '0x1E0AA66Ad5B46e2af5a5587BEcf7Fb15b6E043fc';
 
-// Minimal ABI with exactly what the contract exposes
+// ABI from JSON
 const CONTRACT_ABI = DiplomaNFT;
 
 export default function AdminProtected() {
@@ -24,14 +24,20 @@ export default function AdminProtected() {
 
   // Detect wallets — PHANTOM REMOVED
   useEffect(() => {
-    if (!window.ethereum) return;
+    if (!window.ethereum) {
+      console.warn('[wallet-detect] No window.ethereum found');
+      return;
+    }
 
     const injected = window.ethereum.providers || [window.ethereum];
+    console.log('[wallet-detect] Injected providers:', injected);
 
     const metaMask = injected.find((p) => p.isMetaMask);
     const coinbase = injected.find((p) => p.isCoinbaseWallet);
 
-    // PHANTOM REMOVED HERE
+    console.log('[wallet-detect] Detected MetaMask:', !!metaMask);
+    console.log('[wallet-detect] Detected Coinbase:', !!coinbase);
+
     setAvailableWallets({
       metaMask: metaMask || null,
       coinbase: coinbase || null,
@@ -52,6 +58,11 @@ export default function AdminProtected() {
       setShowWalletModal(false);
       setStatus('connecting');
 
+      console.log('[connectWithSelected] Provider flags:', {
+        isMetaMask: providerObject.isMetaMask,
+        isCoinbaseWallet: providerObject.isCoinbaseWallet,
+      });
+
       const selected = new ethers.BrowserProvider(providerObject);
       setProvider(selected);
 
@@ -59,13 +70,32 @@ export default function AdminProtected() {
 
       const s = await selected.getSigner();
       const addr = await s.getAddress();
+      const network = await selected.getNetwork();
+
+      console.log('[connectWithSelected] Connected address:', addr);
+      console.log('[connectWithSelected] Network:', {
+        chainId: network.chainId?.toString?.() ?? network.chainId,
+        name: network.name,
+      });
+
+      // Optional: enforce Sepolia
+      const SEPOLIA_CHAIN_ID = 11155111;
+      if (Number(network.chainId) !== SEPOLIA_CHAIN_ID) {
+        console.error(
+          '[connectWithSelected] Wrong network. Expected Sepolia (11155111), got:',
+          network.chainId
+        );
+        alert('Please switch your wallet network to Sepolia and try again.');
+        setStatus('error');
+        return;
+      }
 
       setSigner(s);
       setAccount(addr);
 
       await checkRoles(s, addr);
     } catch (err) {
-      console.error(err);
+      console.error('[connectWithSelected] Error:', err);
       setStatus('error');
     }
   }
@@ -74,27 +104,74 @@ export default function AdminProtected() {
     try {
       setStatus('checking');
 
+      const provider = signer.provider;
+      const network = await provider.getNetwork();
+
+      console.log('[checkRoles] Start');
+      console.log('[checkRoles] Address:', addr);
+      console.log('[checkRoles] Network:', {
+        chainId: network.chainId?.toString?.() ?? network.chainId,
+        name: network.name,
+      });
+
+      // Check if there is actually a contract at this address
+      const code = await provider.getCode(CONTRACT_ADDRESS);
+      console.log('[checkRoles] Contract code at', CONTRACT_ADDRESS, '=>', code);
+
+      if (code === '0x') {
+        console.error(
+          '[checkRoles] No contract deployed at this address on the current network. ' +
+          'Likely wrong network in wallet (should be Sepolia) or wrong address.'
+        );
+        setStatus('error');
+        return;
+      }
+
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
 
-      // DEFAULT_ADMIN_ROLE is always 0x00 in AccessControl
+      // Sanity check: is hasMinterRole in the ABI?
+      try {
+        const frag = contract.interface.getFunction('hasMinterRole');
+        console.log('[checkRoles] hasMinterRole fragment:', frag);
+      } catch (e) {
+        console.error('[checkRoles] hasMinterRole not found in ABI!', e);
+      }
+
       const DEFAULT_ADMIN_ROLE = ethers.ZeroHash;
 
-      const [isMinter, isRevoker, isAdmin] = await Promise.all([
+      console.log('[checkRoles] Calling role functions…');
+
+      const results = await Promise.allSettled([
         contract.hasMinterRole(addr),
         contract.hasRevokerRole(addr),
         contract.hasRole(DEFAULT_ADMIN_ROLE, addr),
       ]);
 
-      console.log('Role check for', addr, {
-        isMinter,
-        isRevoker,
-        isAdmin,
+      const labels = ['isMinter', 'isRevoker', 'isAdmin'];
+
+      results.forEach((r, i) => {
+        const label = labels[i];
+        if (r.status === 'fulfilled') {
+          console.log(`[checkRoles] ${label} =>`, r.value);
+        } else {
+          console.error(`[checkRoles] ${label} call failed:`, r.reason);
+        }
       });
+
+      if (results.some((r) => r.status === 'rejected')) {
+        console.error('[checkRoles] One or more role calls failed, not updating roles.');
+        setStatus('error');
+        return;
+      }
+
+      const [isMinter, isRevoker, isAdmin] = results.map((r) => r.value);
+
+      console.log('[checkRoles] Final roles:', { isMinter, isRevoker, isAdmin });
 
       setRoles({ isMinter, isRevoker, isAdmin });
       setStatus('done');
     } catch (err) {
-      console.error(err);
+      console.error('[checkRoles] Unexpected error:', err);
       setStatus('error');
     }
   }
