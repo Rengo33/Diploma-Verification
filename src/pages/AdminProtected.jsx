@@ -3,14 +3,13 @@ import { ethers } from 'ethers';
 import { Wallet, XCircle, Loader2 } from 'lucide-react';
 import SepoliaDiplomaDapp from './SepoliaDiplomaDapp';
 
-// ✅ Import the full ABI
+// ABI
 import DiplomaNFT from '../abi/DiplomaNFT.json';
 
 // Contract address on Sepolia
 const CONTRACT_ADDRESS = '0x1E0AA66Ad5B46e2af5a5587BEcf7Fb15b6E043fc';
-
-// ABI from JSON
 const CONTRACT_ABI = DiplomaNFT;
+const SEPOLIA_CHAIN_ID = 11155111;
 
 export default function AdminProtected() {
   const [provider, setProvider] = useState(null);
@@ -22,21 +21,13 @@ export default function AdminProtected() {
   const [availableWallets, setAvailableWallets] = useState({});
   const [showWalletModal, setShowWalletModal] = useState(false);
 
-  // Detect wallets — PHANTOM REMOVED
+  // Detect wallets
   useEffect(() => {
-    if (!window.ethereum) {
-      console.warn('[wallet-detect] No window.ethereum found');
-      return;
-    }
+    if (!window.ethereum) return;
 
     const injected = window.ethereum.providers || [window.ethereum];
-    console.log('[wallet-detect] Injected providers:', injected);
-
     const metaMask = injected.find((p) => p.isMetaMask);
     const coinbase = injected.find((p) => p.isCoinbaseWallet);
-
-    console.log('[wallet-detect] Detected MetaMask:', !!metaMask);
-    console.log('[wallet-detect] Detected Coinbase:', !!coinbase);
 
     setAvailableWallets({
       metaMask: metaMask || null,
@@ -45,7 +36,7 @@ export default function AdminProtected() {
     });
   }, []);
 
-  async function connectWallet() {
+  function connectWallet() {
     if (!window.ethereum) {
       alert('No wallet found. Please install MetaMask or Coinbase Wallet.');
       return;
@@ -58,34 +49,17 @@ export default function AdminProtected() {
       setShowWalletModal(false);
       setStatus('connecting');
 
-      console.log('[connectWithSelected] Provider flags:', {
-        isMetaMask: providerObject.isMetaMask,
-        isCoinbaseWallet: providerObject.isCoinbaseWallet,
-      });
-
       const selected = new ethers.BrowserProvider(providerObject);
       setProvider(selected);
 
       await providerObject.request({ method: 'eth_requestAccounts' });
-
       const s = await selected.getSigner();
       const addr = await s.getAddress();
       const network = await selected.getNetwork();
 
-      console.log('[connectWithSelected] Connected address:', addr);
-      console.log('[connectWithSelected] Network:', {
-        chainId: network.chainId?.toString?.() ?? network.chainId,
-        name: network.name,
-      });
-
-      // Optional: enforce Sepolia
-      const SEPOLIA_CHAIN_ID = 11155111;
+      // Ensure correct network
       if (Number(network.chainId) !== SEPOLIA_CHAIN_ID) {
-        console.error(
-          '[connectWithSelected] Wrong network. Expected Sepolia (11155111), got:',
-          network.chainId
-        );
-        alert('Please switch your wallet network to Sepolia and try again.');
+        alert('You are connected to the wrong network. Please switch to Sepolia.');
         setStatus('error');
         return;
       }
@@ -95,7 +69,7 @@ export default function AdminProtected() {
 
       await checkRoles(s, addr);
     } catch (err) {
-      console.error('[connectWithSelected] Error:', err);
+      console.error('[connectWithSelected]', err);
       setStatus('error');
     }
   }
@@ -105,41 +79,17 @@ export default function AdminProtected() {
       setStatus('checking');
 
       const provider = signer.provider;
-      const network = await provider.getNetwork();
-
-      console.log('[checkRoles] Start');
-      console.log('[checkRoles] Address:', addr);
-      console.log('[checkRoles] Network:', {
-        chainId: network.chainId?.toString?.() ?? network.chainId,
-        name: network.name,
-      });
-
-      // Check if there is actually a contract at this address
       const code = await provider.getCode(CONTRACT_ADDRESS);
-      console.log('[checkRoles] Contract code at', CONTRACT_ADDRESS, '=>', code);
 
+      // Contract must exist on Sepolia
       if (code === '0x') {
-        console.error(
-          '[checkRoles] No contract deployed at this address on the current network. ' +
-          'Likely wrong network in wallet (should be Sepolia) or wrong address.'
-        );
+        alert('The contract was not found on Sepolia. Please check the network.');
         setStatus('error');
         return;
       }
 
       const contract = new ethers.Contract(CONTRACT_ADDRESS, CONTRACT_ABI, signer);
-
-      // Sanity check: is hasMinterRole in the ABI?
-      try {
-        const frag = contract.interface.getFunction('hasMinterRole');
-        console.log('[checkRoles] hasMinterRole fragment:', frag);
-      } catch (e) {
-        console.error('[checkRoles] hasMinterRole not found in ABI!', e);
-      }
-
       const DEFAULT_ADMIN_ROLE = ethers.ZeroHash;
-
-      console.log('[checkRoles] Calling role functions…');
 
       const results = await Promise.allSettled([
         contract.hasMinterRole(addr),
@@ -147,38 +97,25 @@ export default function AdminProtected() {
         contract.hasRole(DEFAULT_ADMIN_ROLE, addr),
       ]);
 
-      const labels = ['isMinter', 'isRevoker', 'isAdmin'];
-
-      results.forEach((r, i) => {
-        const label = labels[i];
-        if (r.status === 'fulfilled') {
-          console.log(`[checkRoles] ${label} =>`, r.value);
-        } else {
-          console.error(`[checkRoles] ${label} call failed:`, r.reason);
-        }
-      });
-
       if (results.some((r) => r.status === 'rejected')) {
-        console.error('[checkRoles] One or more role calls failed, not updating roles.');
         setStatus('error');
         return;
       }
 
       const [isMinter, isRevoker, isAdmin] = results.map((r) => r.value);
-
-      console.log('[checkRoles] Final roles:', { isMinter, isRevoker, isAdmin });
-
       setRoles({ isMinter, isRevoker, isAdmin });
       setStatus('done');
     } catch (err) {
-      console.error('[checkRoles] Unexpected error:', err);
+      console.error('[checkRoles]', err);
       setStatus('error');
     }
   }
 
   const hasAccess = roles.isAdmin || roles.isMinter || roles.isRevoker;
 
-  // Loading
+  //
+  // LOADING STATE
+  //
   if (status === 'connecting' || status === 'checking') {
     return (
       <div className="min-h-screen flex justify-center items-center bg-[#f7f8fa]">
@@ -190,7 +127,9 @@ export default function AdminProtected() {
     );
   }
 
-  // Not connected
+  //
+  // CONNECT WALLET SCREEN
+  //
   if (!account) {
     return (
       <>
@@ -258,7 +197,9 @@ export default function AdminProtected() {
     );
   }
 
-  // Permission denied
+  //
+  // PERMISSION DENIED
+  //
   if (!hasAccess && (status === 'done' || status === 'error')) {
     return (
       <div className="min-h-screen flex flex-col items-center justify-center bg-[#f7f8fa] font-sans">
@@ -291,7 +232,9 @@ export default function AdminProtected() {
     );
   }
 
-  // Authorized
+  //
+  // AUTHORIZED
+  //
   return (
     <SepoliaDiplomaDapp
       provider={provider}
